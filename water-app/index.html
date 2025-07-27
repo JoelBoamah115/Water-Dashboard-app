@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Water Monitoring System</title>
+    <!-- Tailwind CSS CDN for quick setup -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons CDN for icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom glassmorphism effect for cards */
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.18);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-radius: 1.25rem;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+        }
+        .fade-in {
+            animation: fadeIn 1s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-gradient-to-br from-blue-100 via-cyan-100 to-indigo-200">
+    <!-- Header -->
+    <header class="w-full bg-gradient-to-r from-blue-700 via-cyan-600 to-indigo-700 shadow-lg py-8 mb-10 relative overflow-hidden">
+        <div class="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/60 via-blue-300/30 to-transparent"></div>
+        <h1 class="relative z-10 text-4xl md:text-5xl font-extrabold text-center text-white tracking-tight drop-shadow-lg fade-in">
+            <span class="inline-block align-middle mr-3"><i data-lucide="waves" class="inline w-10 h-10 text-cyan-200 animate-bounce"></i></span>
+            Smart Water Monitoring System
+        </h1>
+        <p class="relative z-10 text-center text-lg text-cyan-100 mt-2 font-medium fade-in">Real-time insights for a safer, smarter water supply</p>
+    </header>
+
+    <!-- Sensor Cards Section -->
+    <main class="flex-1 flex flex-col items-center justify-center px-4">
+        <div id="sensor-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 w-full max-w-6xl"></div>
+    </main>
+
+    <!-- Buzzer Alert Section -->
+    <footer class="w-full bg-gradient-to-r from-yellow-100 via-yellow-50 to-white shadow-inner mt-12 py-8 fade-in">
+        <div class="max-w-2xl mx-auto flex flex-col items-center">
+            <div class="flex items-center gap-3 mb-3">
+                <i data-lucide="bell" class="w-7 h-7 text-yellow-500 animate-pulse"></i>
+                <span class="text-xl font-bold text-yellow-700 tracking-wide">Buzzer Alerts</span>
+            </div>
+            <div id="alert-area" class="w-full glass border border-yellow-200 px-6 py-4 text-yellow-800 text-center shadow-lg text-lg font-semibold transition-all duration-300">
+                Water Level Low! Please check the system.
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Sensor data array
+        const sensors = [
+            {
+                title: 'Water Level',
+                icon: 'droplet',
+                value: '85%',
+                status: 'normal',
+            },
+            {
+                title: 'pH Value',
+                icon: 'scale',
+                value: '7.2 pH',
+                status: 'normal',
+            },
+            {
+                title: 'Turbidity',
+                icon: 'cloud',
+                value: 'Clear',
+                status: 'normal',
+            },
+            {
+                title: 'Temperature',
+                icon: 'thermometer',
+                value: '25°C',
+                status: 'warning',
+            },
+        ];
+
+        // Status color mapping
+        const statusColors = {
+            normal: 'bg-green-400 shadow-green-200',
+            warning: 'bg-yellow-400 shadow-yellow-200',
+            critical: 'bg-red-500 shadow-red-200',
+        };
+        const statusTextColors = {
+            normal: 'text-green-700',
+            warning: 'text-yellow-700',
+            critical: 'text-red-700',
+        };
+
+        // Generates sensor cards
+        const cardsContainer = document.getElementById('sensor-cards');
+        sensors.forEach((sensor, idx) => {
+            const card = document.createElement('div');
+            card.className =
+                'glass fade-in p-8 flex flex-col items-center shadow-xl transition-transform transform hover:scale-105 hover:shadow-2xl hover:bg-white/80 cursor-pointer duration-300';
+            card.style.animationDelay = `${idx * 0.1 + 0.2}s`;
+
+            // Icons
+            const icon = document.createElement('i');
+            icon.setAttribute('data-lucide', sensor.icon);
+            icon.className = 'w-12 h-12 mb-4 text-blue-500 drop-shadow-md';
+            card.appendChild(icon);
+
+            // Title
+            const title = document.createElement('div');
+            title.className = 'text-xl font-bold text-gray-800 mb-1 tracking-wide';
+            title.textContent = sensor.title;
+            card.appendChild(title);
+
+            // Values
+            const value = document.createElement('div');
+            value.className = 'text-3xl font-extrabold text-blue-700 mb-3 tracking-tight';
+            value.textContent = sensor.value;
+            card.appendChild(value);
+
+            // Status indicators
+            const statusRow = document.createElement('div');
+            statusRow.className = 'flex items-center gap-2 mt-2';
+            const statusCircle = document.createElement('span');
+            statusCircle.className = `inline-block w-4 h-4 rounded-full shadow-md border-2 border-white ${statusColors[sensor.status]}`;
+            statusRow.appendChild(statusCircle);
+            const statusText = document.createElement('span');
+            statusText.className = `text-base font-medium capitalize ${statusTextColors[sensor.status]}`;
+            statusText.textContent = sensor.status;
+            statusRow.appendChild(statusText);
+            card.appendChild(statusRow);
+
+            // Subtle animated underline on hover
+            const underline = document.createElement('div');
+            underline.className = 'w-0 h-1 bg-blue-300 rounded-full mt-4 transition-all duration-300 group-hover:w-16';
+            card.appendChild(underline);
+
+            card.addEventListener('mouseenter', () => {
+                underline.classList.add('w-16');
+            });
+            card.addEventListener('mouseleave', () => {
+                underline.classList.remove('w-16');
+            });
+
+            cardsContainer.appendChild(card);
+        });
+
+        // Initialized Lucide icons after DOM update
+        if (window.lucide) {
+            lucide.createIcons();
+        } else {
+            document.addEventListener('DOMContentLoaded', () => {
+                lucide.createIcons();
+            });
+        }
+    </script>
+</body>
+</html>
