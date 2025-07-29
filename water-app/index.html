@@ -1,163 +1,450 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Water Monitoring System</title>
-    <!-- Tailwind CSS CDN for quick setup -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lucide Icons CDN for icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        /* Custom glassmorphism effect for cards */
-        .glass {
-            background: rgba(255, 255, 255, 0.7);
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.18);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            border-radius: 1.25rem;
-            border: 1px solid rgba(255, 255, 255, 0.25);
-        }
-        .fade-in {
-            animation: fadeIn 1s ease;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-    </style>
-</head>
-<body class="min-h-screen flex flex-col bg-gradient-to-br from-blue-100 via-cyan-100 to-indigo-200">
-    <!-- Header -->
-    <header class="w-full bg-gradient-to-r from-blue-700 via-cyan-600 to-indigo-700 shadow-lg py-8 mb-10 relative overflow-hidden">
-        <div class="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-white/60 via-blue-300/30 to-transparent"></div>
-        <h1 class="relative z-10 text-4xl md:text-5xl font-extrabold text-center text-white tracking-tight drop-shadow-lg fade-in">
-            <span class="inline-block align-middle mr-3"><i data-lucide="waves" class="inline w-10 h-10 text-cyan-200 animate-bounce"></i></span>
-            Smart Water Monitoring System
-        </h1>
-        <p class="relative z-10 text-center text-lg text-cyan-100 mt-2 font-medium fade-in">Real-time insights for a safer, smarter water supply</p>
-    </header>
+// import { Chart } from "@/components/ui/chart"
+class WaterMonitoringDashboard {
+  constructor() {
+    this.config = {
+      channelId: "3018403",
+      readApiKey: "L9GH5CDPBODGVBDJ",
+      updateInterval: 10000,
+      ranges: {
+        ph: { min: 6.5, max: 8.5 },
+        turbidity: { min: 0, max: 5 },
+        temperature: { min: 15, max: 30 },
+        waterlevel: { min: 50, max: 200 },
+      },
+    }
 
-    <!-- Sensor Cards Section -->
-    <main class="flex-1 flex flex-col items-center justify-center px-4">
-        <div id="sensor-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 w-full max-w-6xl"></div>
-    </main>
+    this.sensorData = {
+      ph: [],
+      turbidity: [],
+      temperature: [],
+      waterlevel: [],
+    }
 
-    <!-- Buzzer Alert Section -->
-    <footer class="w-full bg-gradient-to-r from-yellow-100 via-yellow-50 to-white shadow-inner mt-12 py-8 fade-in">
-        <div class="max-w-2xl mx-auto flex flex-col items-center">
-            <div class="flex items-center gap-3 mb-3">
-                <i data-lucide="bell" class="w-7 h-7 text-yellow-500 animate-pulse"></i>
-                <span class="text-xl font-bold text-yellow-700 tracking-wide">Buzzer Alerts</span>
-            </div>
-            <div id="alert-area" class="w-full glass border border-yellow-200 px-6 py-4 text-yellow-800 text-center shadow-lg text-lg font-semibold transition-all duration-300">
-                Water Level Low! Please check the system.
-            </div>
-        </div>
-    </footer>
+    this.chart = null
+    this.updateTimer = null
+    this.isConnected = false
 
-    <script>
-        // Sensor data array
-        const sensors = [
-            {
-                title: 'Water Level',
-                icon: 'droplet',
-                value: '85%',
-                status: 'normal',
+    this.init()
+  }
+
+  init() {
+    this.loadSettings()
+    this.setupChart()
+    this.updateRangeDisplays()
+    this.startDataFetching()
+
+    // Setup event listeners
+    document.getElementById("timeRange").addEventListener("change", () => {
+      this.updateChart()
+    })
+  }
+
+  loadSettings() {
+    const saved = localStorage.getItem("waterMonitorSettings")
+    if (saved) {
+      this.config = { ...this.config, ...JSON.parse(saved) }
+    }
+
+    // Load settings into form
+    document.getElementById("channelId").value = this.config.channelId || ""
+    document.getElementById("readApiKey").value = this.config.readApiKey || ""
+    document.getElementById("updateInterval").value = this.config.updateInterval
+
+    // Load ranges
+    Object.keys(this.config.ranges).forEach((sensor) => {
+      document.getElementById(`${sensor}Min`).value = this.config.ranges[sensor].min
+      document.getElementById(`${sensor}Max`).value = this.config.ranges[sensor].max
+    })
+  }
+
+  saveSettings() {
+    // Get ThingSpeak settings
+    this.config.channelId = document.getElementById("channelId").value
+    this.config.readApiKey = document.getElementById("readApiKey").value
+    this.config.updateInterval = Number.parseInt(document.getElementById("updateInterval").value)
+
+    // Get ranges
+    Object.keys(this.config.ranges).forEach((sensor) => {
+      const min = Number.parseFloat(document.getElementById(`${sensor}Min`).value)
+      const max = Number.parseFloat(document.getElementById(`${sensor}Max`).value)
+
+      if (!isNaN(min) && !isNaN(max)) {
+        this.config.ranges[sensor] = { min, max }
+      }
+    })
+
+    // Save to localStorage
+    localStorage.setItem("waterMonitorSettings", JSON.stringify(this.config))
+
+    // Update displays
+    this.updateRangeDisplays()
+
+    // Restart data fetching with new interval
+    this.startDataFetching()
+
+    this.closeSettings()
+    this.showNotification("Settings saved successfully!", "success")
+  }
+
+  updateRangeDisplays() {
+    Object.keys(this.config.ranges).forEach((sensor) => {
+      const range = this.config.ranges[sensor]
+      document.getElementById(`${sensor}Range`).textContent = `${range.min} - ${range.max}`
+    })
+  }
+
+  async fetchSensorData() {
+    if (!this.config.channelId || !this.config.readApiKey) {
+      this.updateConnectionStatus(false, "Configuration required")
+      return
+    }
+
+    try {
+      const timeRange = document.getElementById("timeRange").value
+      const url = `https://api.thingspeak.com/channels/${this.config.channelId}/feeds.json?api_key=${this.config.readApiKey}&results=${timeRange}`
+
+      const response = await fetch(url)
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+
+      if (data.feeds && data.feeds.length > 0) {
+        this.processSensorData(data.feeds)
+        this.updateConnectionStatus(true, "Connected")
+        this.updateLastUpdated()
+      } else {
+        throw new Error("No data received")
+      }
+    } catch (error) {
+      console.error("Error fetching data:", error)
+      this.updateConnectionStatus(false, "Connection error")
+      this.showAlert("Failed to fetch sensor data. Please check your configuration.")
+    }
+  }
+
+  processSensorData(feeds) {
+    // Clear existing data
+    Object.keys(this.sensorData).forEach((sensor) => {
+      this.sensorData[sensor] = []
+    })
+
+    // Process feeds
+    feeds.forEach((feed) => {
+      const timestamp = new Date(feed.created_at)
+
+      // Field mapping: field1=pH, field2=turbidity, field3=temperature, field4=waterlevel
+      if (feed.field1 !== null) {
+        this.sensorData.ph.push({
+          value: Number.parseFloat(feed.field1),
+          timestamp: timestamp,
+        })
+      }
+
+      if (feed.field2 !== null) {
+        this.sensorData.turbidity.push({
+          value: Number.parseFloat(feed.field2),
+          timestamp: timestamp,
+        })
+      }
+
+      if (feed.field3 !== null) {
+        this.sensorData.temperature.push({
+          value: Number.parseFloat(feed.field3),
+          timestamp: timestamp,
+        })
+      }
+
+      if (feed.field4 !== null) {
+        this.sensorData.waterlevel.push({
+          value: Number.parseFloat(feed.field4),
+          timestamp: timestamp,
+        })
+      }
+    })
+
+    // Update displays
+    this.updateSensorCards()
+    this.updateChart()
+    this.checkAlerts()
+  }
+
+  updateSensorCards() {
+    Object.keys(this.sensorData).forEach((sensor) => {
+      const data = this.sensorData[sensor]
+      const valueElement = document.getElementById(`${sensor}Value`)
+      const statusElement = document.getElementById(`${sensor}Status`)
+
+      if (data.length > 0) {
+        const latestValue = data[data.length - 1].value
+        valueElement.textContent = latestValue.toFixed(sensor === "waterlevel" ? 0 : 1)
+
+        // Check if value is in safe range
+        const range = this.config.ranges[sensor]
+        const isInRange = latestValue >= range.min && latestValue <= range.max
+
+        statusElement.className = `status-badge ${isInRange ? "ok" : "error"}`
+        statusElement.innerHTML = `<i class="fas fa-circle"></i><span>${isInRange ? "OK" : "Alert"}</span>`
+      } else {
+        valueElement.textContent = "--"
+        statusElement.className = "status-badge"
+        statusElement.innerHTML = '<i class="fas fa-circle"></i><span>No Data</span>'
+      }
+    })
+  }
+
+  setupChart() {
+    const ctx = document.getElementById("sensorChart").getContext("2d")
+
+    this.chart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: "sensor values",
+            data: [],
+            borderColor: "#667eea",
+            backgroundColor: "rgba(102, 126, 234, 0.1)",
+            tension: 0.4,
+            yAxisID: "y",
+          },
+          {
+            label: "Turbidity (NTU)",
+            data: [],
+            borderColor: "#f5576c",
+            backgroundColor: "rgba(245, 87, 108, 0.1)",
+            tension: 0.4,
+            yAxisID: "y1",
+          },
+          {
+            label: "Temperature (°C)",
+            data: [],
+            borderColor: "#4facfe",
+            backgroundColor: "rgba(79, 172, 254, 0.1)",
+            tension: 0.4,
+            yAxisID: "y2",
+          },
+          {
+            label: "Water Level (cm)",
+            data: [],
+            borderColor: "#43e97b",
+            backgroundColor: "rgba(67, 233, 123, 0.1)",
+            tension: 0.4,
+            yAxisID: "y3",
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: "index",
+          intersect: false,
+        },
+        plugins: {
+          legend: {
+            position: "top",
+          },
+          tooltip: {
+            mode: "index",
+            intersect: false,
+          },
+        },
+        scales: {
+          x: {
+            display: true,
+            title: {
+              display: true,
+              text: "Time",
             },
-            {
-                title: 'pH Value',
-                icon: 'scale',
-                value: '7.2 pH',
-                status: 'normal',
+          },
+          y: {
+            type: "linear",
+            display: true,
+            position: "left",
+            title: {
+              display: true,
+              text: "pH",
             },
-            {
-                title: 'Turbidity',
-                icon: 'cloud',
-                value: 'Clear',
-                status: 'normal',
+            grid: {
+              drawOnChartArea: false,
             },
-            {
-                title: 'Temperature',
-                icon: 'thermometer',
-                value: '25°C',
-                status: 'warning',
+          },
+          y1: {
+            type: "linear",
+            display: false,
+            position: "right",
+            grid: {
+              drawOnChartArea: false,
             },
-        ];
+          },
+          y2: {
+            type: "linear",
+            display: false,
+            position: "right",
+            grid: {
+              drawOnChartArea: false,
+            },
+          },
+          y3: {
+            type: "linear",
+            display: false,
+            position: "right",
+            grid: {
+              drawOnChartArea: false,
+            },
+          },
+        },
+      },
+    })
+  }
 
-        // Status color mapping
-        const statusColors = {
-            normal: 'bg-green-400 shadow-green-200',
-            warning: 'bg-yellow-400 shadow-yellow-200',
-            critical: 'bg-red-500 shadow-red-200',
-        };
-        const statusTextColors = {
-            normal: 'text-green-700',
-            warning: 'text-yellow-700',
-            critical: 'text-red-700',
-        };
+  updateChart() {
+    if (!this.chart) return
 
-        // Generates sensor cards
-        const cardsContainer = document.getElementById('sensor-cards');
-        sensors.forEach((sensor, idx) => {
-            const card = document.createElement('div');
-            card.className =
-                'glass fade-in p-8 flex flex-col items-center shadow-xl transition-transform transform hover:scale-105 hover:shadow-2xl hover:bg-white/80 cursor-pointer duration-300';
-            card.style.animationDelay = `${idx * 0.1 + 0.2}s`;
+    const labels = []
+    const datasets = this.chart.data.datasets
 
-            // Icons
-            const icon = document.createElement('i');
-            icon.setAttribute('data-lucide', sensor.icon);
-            icon.className = 'w-12 h-12 mb-4 text-blue-500 drop-shadow-md';
-            card.appendChild(icon);
+    // Clear existing data
+    datasets.forEach((dataset) => {
+      dataset.data = []
+    })
 
-            // Title
-            const title = document.createElement('div');
-            title.className = 'text-xl font-bold text-gray-800 mb-1 tracking-wide';
-            title.textContent = sensor.title;
-            card.appendChild(title);
+    // Find common timestamps
+    const allTimestamps = new Set()
+    Object.values(this.sensorData).forEach((sensorArray) => {
+      sensorArray.forEach((point) => {
+        allTimestamps.add(point.timestamp.getTime())
+      })
+    })
 
-            // Values
-            const value = document.createElement('div');
-            value.className = 'text-3xl font-extrabold text-blue-700 mb-3 tracking-tight';
-            value.textContent = sensor.value;
-            card.appendChild(value);
+    const sortedTimestamps = Array.from(allTimestamps).sort()
 
-            // Status indicators
-            const statusRow = document.createElement('div');
-            statusRow.className = 'flex items-center gap-2 mt-2';
-            const statusCircle = document.createElement('span');
-            statusCircle.className = `inline-block w-4 h-4 rounded-full shadow-md border-2 border-white ${statusColors[sensor.status]}`;
-            statusRow.appendChild(statusCircle);
-            const statusText = document.createElement('span');
-            statusText.className = `text-base font-medium capitalize ${statusTextColors[sensor.status]}`;
-            statusText.textContent = sensor.status;
-            statusRow.appendChild(statusText);
-            card.appendChild(statusRow);
+    sortedTimestamps.forEach((timestamp) => {
+      const date = new Date(timestamp)
+      labels.push(date.toLocaleTimeString())
 
-            // Subtle animated underline on hover
-            const underline = document.createElement('div');
-            underline.className = 'w-0 h-1 bg-blue-300 rounded-full mt-4 transition-all duration-300 group-hover:w-16';
-            card.appendChild(underline);
+      // pH data
+      const phPoint = this.sensorData.ph.find((p) => p.timestamp.getTime() === timestamp)
+      datasets[0].data.push(phPoint ? phPoint.value : null)
 
-            card.addEventListener('mouseenter', () => {
-                underline.classList.add('w-16');
-            });
-            card.addEventListener('mouseleave', () => {
-                underline.classList.remove('w-16');
-            });
+      // Turbidity data
+      const turbidityPoint = this.sensorData.turbidity.find((p) => p.timestamp.getTime() === timestamp)
+      datasets[1].data.push(turbidityPoint ? turbidityPoint.value : null)
 
-            cardsContainer.appendChild(card);
-        });
+      // Temperature data
+      const tempPoint = this.sensorData.temperature.find((p) => p.timestamp.getTime() === timestamp)
+      datasets[2].data.push(tempPoint ? tempPoint.value : null)
 
-        // Initialized Lucide icons after DOM update
-        if (window.lucide) {
-            lucide.createIcons();
-        } else {
-            document.addEventListener('DOMContentLoaded', () => {
-                lucide.createIcons();
-            });
+      // Water level data
+      const levelPoint = this.sensorData.waterlevel.find((p) => p.timestamp.getTime() === timestamp)
+      datasets[3].data.push(levelPoint ? levelPoint.value : null)
+    })
+
+    this.chart.data.labels = labels
+    this.chart.update()
+  }
+
+  checkAlerts() {
+    const alerts = []
+
+    Object.keys(this.sensorData).forEach((sensor) => {
+      const data = this.sensorData[sensor]
+      if (data.length > 0) {
+        const latestValue = data[data.length - 1].value
+        const range = this.config.ranges[sensor]
+
+        if (latestValue < range.min || latestValue > range.max) {
+          const sensorName = sensor.charAt(0).toUpperCase() + sensor.slice(1)
+          alerts.push(`${sensorName}: ${latestValue.toFixed(1)} (Range: ${range.min}-${range.max})`)
         }
-    </script>
-</body>
-</html>
+      }
+    })
+
+    if (alerts.length > 0) {
+      this.showAlert(`Sensor values out of range: ${alerts.join(", ")}`)
+    } else {
+      this.closeAlert()
+    }
+  }
+
+  showAlert(message) {
+    const alertBanner = document.getElementById("alertBanner")
+    const alertMessage = document.getElementById("alertMessage")
+
+    alertMessage.textContent = message
+    alertBanner.style.display = "block"
+  }
+
+  closeAlert() {
+    document.getElementById("alertBanner").style.display = "none"
+  }
+
+  updateConnectionStatus(connected, message) {
+    const statusDot = document.getElementById("connectionStatus")
+    const statusText = document.getElementById("connectionText")
+
+    this.isConnected = connected
+    statusDot.className = `status-dot ${connected ? "connected" : "error"}`
+    statusText.textContent = message
+  }
+
+  updateLastUpdated() {
+    const now = new Date()
+    document.getElementById("lastUpdated").textContent = now.toLocaleString()
+  }
+
+  startDataFetching() {
+    // Clear existing timer
+    if (this.updateTimer) {
+      clearInterval(this.updateTimer)
+    }
+
+    // Fetch data immediately
+    this.fetchSensorData()
+
+    // Set up recurring fetch
+    this.updateTimer = setInterval(() => {
+      this.fetchSensorData()
+    }, this.config.updateInterval)
+  }
+
+  showNotification(message, type = "info") {
+    // Simple notification - you could enhance this with a proper notification system
+    console.log(`${type.toUpperCase()}: ${message}`)
+  }
+
+  openSettings() {
+    document.getElementById("settingsModal").classList.add("active")
+  }
+
+  closeSettings() {
+    document.getElementById("settingsModal").classList.remove("active")
+  }
+}
+
+// Global functions for HTML event handlers
+function openSettings() {
+  dashboard.openSettings()
+}
+
+function closeSettings() {
+  dashboard.closeSettings()
+}
+
+function saveSettings() {
+  dashboard.saveSettings()
+}
+
+function closeAlert() {
+  dashboard.closeAlert()
+}
+
+// Initialize dashboard when page loads
+let dashboard
+document.addEventListener("DOMContentLoaded", () => {
+  dashboard = new WaterMonitoringDashboard()
+})
